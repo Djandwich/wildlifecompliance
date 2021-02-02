@@ -22,6 +22,7 @@ from django.utils import timezone
 from django.utils.encoding import python_2_unicode_compatible
 
 from smart_selects.db_fields import ChainedForeignKey
+from ckeditor.fields import RichTextField
 
 from ledger.accounts.models import EmailUser, RevisionedMixin
 from ledger.payments.invoice.models import Invoice
@@ -196,6 +197,10 @@ class ApplicationDocument(Document):
 
 
 class Application(RevisionedMixin):
+
+    ACTIVITIES = None
+    LICENCE_OFFICERS = None
+    LICENCE_TYPE_DATA = None
 
     APPLICANT_TYPE_ORGANISATION = 'ORG'
     APPLICANT_TYPE_PROXY = 'PRX'
@@ -453,6 +458,7 @@ class Application(RevisionedMixin):
                 'licence_category_name'] = self.licence_category_name
 
         self.property_cache['payment_status'] = self.payment_status
+        self.set_property_cache_total_paid_amount(self.get_total_paid_amount())
 
         _inv = self.latest_invoice
         if _inv:
@@ -467,6 +473,7 @@ class Application(RevisionedMixin):
 
     @property
     def applicant(self):
+        logger.debug('Application.applicant()')
         if self.org_applicant:
             return self.org_applicant.organisation.name
         elif self.proxy_applicant:
@@ -480,6 +487,7 @@ class Application(RevisionedMixin):
 
     @property
     def applicant_details(self):
+        logger.debug('Application.applicant_details()')
         if self.org_applicant:
             return '{} \n{}'.format(
                 self.org_applicant.organisation.name,
@@ -497,6 +505,7 @@ class Application(RevisionedMixin):
 
     @property
     def applicant_id(self):
+        logger.debug('Application.applicant_id()')
         if self.org_applicant:
             return self.org_applicant.id
         elif self.proxy_applicant:
@@ -506,6 +515,7 @@ class Application(RevisionedMixin):
 
     @property
     def applicant_type(self):
+        logger.debug('Application.applicant_type()')
         if self.org_applicant:
             return self.APPLICANT_TYPE_ORGANISATION
         elif self.proxy_applicant:
@@ -585,6 +595,7 @@ class Application(RevisionedMixin):
         """
         :return: True if the application is in one of the editable status.
         """
+        logger.debug('Application.can_user_edit()')
         return self.customer_status in self.CUSTOMER_EDITABLE_STATE
 
     @property
@@ -592,6 +603,7 @@ class Application(RevisionedMixin):
         """
         :return: True if the application is in one of the approved status.
         """
+        logger.debug('Application.can_user_view()')
         return self.customer_status in self.CUSTOMER_VIEWABLE_STATE
 
     @property
@@ -686,6 +698,15 @@ class Application(RevisionedMixin):
         Property defining the total amount already paid for the Application.
         """
         logger.debug('Application.total_paid_amount() - start')
+        total = self.get_property_cache_total_paid_amount()
+        logger.debug('Application.total_paid_amount() - end')
+        return total
+
+    def get_total_paid_amount(self):
+        """
+        Property defining the total amount already paid for the Application.
+        """
+        logger.debug('Application.get_total_paid_amount() - start')
         amount = 0
         if self.invoices.count() > 0:
             invoices = ApplicationInvoice.objects.filter(
@@ -695,12 +716,48 @@ class Application(RevisionedMixin):
                     reference=invoice.invoice_reference)
                 # payment_amount includes refund payment adjustments.
                 amount += detail.payment_amount
-        logger.debug('Application.total_paid_amount() - end')
+        logger.debug('Application.get_total_paid_amount() - end')
 
         return amount
 
+    def get_property_cache_total_paid_amount(self):
+        '''
+        Getter for payment_status on the property cache.
+
+        NOTE: only used for presentation purposes.
+        '''
+        status = 0
+        try:
+
+            status = self.property_cache['total_paid_amount']
+
+        except KeyError:
+            pass
+
+        return status
+
+    def set_property_cache_total_paid_amount(self, total_paid):
+        '''
+        Setter for payment_status on the property cache.
+
+        NOTE: only used for presentation purposes.
+        '''
+        import json
+        from decimal import Decimal as D
+
+        class DecimalEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, D):
+                    return float(obj)
+                return json.JSONEncoder.default(self, obj)
+
+        if self.id:
+            data = DecimalEncoder().encode(total_paid)
+            self.property_cache['total_paid_amount'] = data
+
     @property
     def regions_list(self):
+        logger.debug('Application.regions_list()')
         return self.region.split(',') if self.region else []
 
     @property
@@ -714,10 +771,14 @@ class Application(RevisionedMixin):
         Authorised licensing officers for this Application.
         """
         logger.debug('Application.licence_officers()')
-        groups = self.get_permission_groups('licensing_officer').values_list('id', flat=True)
-        return EmailUser.objects.filter(
-            groups__id__in=groups
-        ).distinct()
+        if not self.LICENCE_OFFICERS:
+            groups = self.get_permission_groups(
+                'licensing_officer').values_list('id', flat=True)
+            self.LICENCE_OFFICERS = EmailUser.objects.filter(
+                groups__id__in=groups
+            ).distinct()
+        
+        return self.LICENCE_OFFICERS
 
     @property
     def licence_approvers(self):
@@ -744,6 +805,7 @@ class Application(RevisionedMixin):
 
     @property
     def licence_type_short_name(self):
+        logger.debug('Application.licence_type_short_name()')
         return self.licence_category
 
     @property
@@ -758,27 +820,30 @@ class Application(RevisionedMixin):
             LicenceCategorySerializer
         )
         logger.debug('Application.licence_type_data()')
-        serializer = LicenceCategorySerializer(
-            self.licence_purposes.first().licence_category,
-            context={
-                'purpose_records': self.licence_purposes
-            }
-        )
-        licence_data = serializer.data
-        for activity in licence_data['activity']:
-            selected_activity = self.get_selected_activity(activity['id'])
-            activity['processing_status'] = {
-                'id': selected_activity.processing_status,
-                'name': get_choice_value(
-                    selected_activity.processing_status,
-                    ApplicationSelectedActivity.PROCESSING_STATUS_CHOICES
-                )
-            }
-            # although these fields are retrieved it is not applied for the
-            # authorisation.
-            activity['start_date'] = selected_activity.get_start_date()
-            activity['expiry_date'] = selected_activity.get_expiry_date()
-        return licence_data
+        if not self.LICENCE_TYPE_DATA:
+            serializer = LicenceCategorySerializer(
+                self.licence_purposes.first().licence_category,
+                context={
+                    'purpose_records': self.licence_purposes
+                }
+            )
+            licence_data = serializer.data
+            for activity in licence_data['activity']:
+                selected_activity = self.get_selected_activity(activity['id'])
+                activity['processing_status'] = {
+                    'id': selected_activity.processing_status,
+                    'name': get_choice_value(
+                        selected_activity.processing_status,
+                        ApplicationSelectedActivity.PROCESSING_STATUS_CHOICES
+                    )
+                }
+                # although these fields are retrieved it is not applied for the
+                # authorisation.
+                activity['start_date'] = selected_activity.get_start_date()
+                activity['expiry_date'] = selected_activity.get_expiry_date()
+            self.LICENCE_TYPE_DATA = licence_data
+
+        return self.LICENCE_TYPE_DATA
 
     @property
     def licence_category_name(self):
@@ -2205,9 +2270,20 @@ class Application(RevisionedMixin):
 
     @property
     def activities(self):
-        """ returns a queryset of activities attached to application (shortcut to ApplicationSelectedActivity related_name). """
-        logger.debug('Application.activities()')
-        return self.selected_activities.exclude(processing_status=ApplicationSelectedActivity.PROCESSING_STATUS_DISCARDED)
+        '''
+        Returns a queryset of activities attached to application (shortcut to
+        ApplicationSelectedActivity related_name).
+        '''
+        logger.debug('Application.activities() - start')
+        DISCARDED = ApplicationSelectedActivity.PROCESSING_STATUS_DISCARDED
+        if not self.ACTIVITIES:
+            self.ACTIVITIES = self.selected_activities.exclude(
+                processing_status=DISCARDED
+            )
+
+        logger.debug('Application.activities() - end')
+
+        return self.ACTIVITIES
 
     def get_activity_chain(self, **activity_filters):
         activity_chain = self.selected_activities.filter(**activity_filters)
@@ -2900,7 +2976,7 @@ class Application(RevisionedMixin):
                         = parent_licence.licence_document
                     latest_application_in_function.save()
 
-            except BaseException as e:
+            except Exception as e:
                 logger.error('issue_activity() ID {} - {}'.format(
                     self.id, e))
                 raise
@@ -3262,8 +3338,8 @@ class Application(RevisionedMixin):
                 # Send out any refund notifications.
                 self.alert_for_refund(request)
 
-            except BaseException:
-                raise
+            except Exception as e:
+                raise Exception("Final decision error: {}".format(e))
 
         if self.submit_type == Application.SUBMIT_TYPE_ONLINE \
           and failed_payment_activities:
@@ -6232,13 +6308,15 @@ class ApplicationFormDataRecord(models.Model):
 @python_2_unicode_compatible
 class ApplicationStandardCondition(RevisionedMixin):
     short_description = models.CharField(max_length=100, null=True, blank=True)
-    text = models.TextField()
+    #text = models.TextField()
+    text = RichTextField(config_name='pdf_config')
     code = models.CharField(max_length=10, unique=True)
     obsolete = models.BooleanField(default=False)
     return_type = models.ForeignKey(
         'wildlifecompliance.ReturnType', null=True, blank=True)
-    additional_information = models.TextField(
-        max_length=1024, null=True, blank=True)
+    #additional_information = models.TextField(max_length=1024, null=True, blank=True)
+    additional_information = RichTextField(config_name='pdf_config', null=True, blank=True)
+        
 
     def __str__(self):
         return self.code

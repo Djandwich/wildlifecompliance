@@ -66,6 +66,7 @@
                                                             </div>
                                                             <!-- Activity Purpose Free Text -->        
                                                             <div v-for="(free_text, pt_idx) in p.purpose_species_json" v-bind:key="`pt_${pt_idx}`">
+                                                                <br/>
 
                                                                 <!--
                                                                 <div class="col-sm-12">
@@ -82,17 +83,22 @@
                                                                 </div>
                                                                 -->
                                                                 <div class="col-sm-12">
-                                                                    <div class="col-sm-3">
+                                                                    <div class="col-sm-2">
                                                                         <label class="control-label pull-left" for="Name">Details</label>
                                                                     </div>
-                                                                    <div class="col-sm-6">
+                                                                    <div class="col-sm-8">
+                                                                        <!--
                                                                         <textarea ref="ap_text_detail" class="form-control" style="width:100%;" v-model="free_text.details" />
+                                                                        -->
+                                                                        <ckeditor ref="ap_text_detail" v-model="free_text.details" :config="editorConfig"></ckeditor>
+
                                                                     </div>
-                                                                    <div v-show="free_text.is_additional_info" class="col-sm-3">
+                                                                    <div v-show="free_text.is_additional_info" class="col-sm-2">
                                                                         <input type="checkbox" checked disabled/>
                                                                         <label>Is additional info</label>
                                                                     </div>
                                                                 </div>
+
 
                                                             </div>
                                                         </div>
@@ -213,6 +219,7 @@ import alert from '@vue-utils/alert.vue'
 import {helpers,api_endpoints} from "@/utils/hooks.js"
 import { mapGetters } from 'vuex'
 import filefield from '@/components/common/compliance_file.vue'
+
 export default {
     name:'Proposed-Licence',
     components:{
@@ -221,9 +228,28 @@ export default {
         filefield,
     },
     props:{
+        can_view_richtext_src: Boolean,
     },
     data:function () {
         let vm = this;
+        if (vm.can_view_richtext_src) {
+            var toolbar_options = [
+                [ '-', 'Bold', 'Italic' ],
+                [ 'Format' ],
+                [ 'NumberedList', 'BulletedList' ],
+                //[ 'Indent', 'Outdent' ],
+                [ 'Table' ],
+                [ 'Source' ],
+            ]
+	} else {
+            var toolbar_options = [
+                [ '-', 'Bold', 'Italic' ],
+                [ 'Format' ],
+                [ 'NumberedList', 'BulletedList' ],
+                [ 'Table' ],
+            ]
+	}
+
         return {
             purposeBody: `purposeBody${vm._uid}`,
             isModalOpen:false,
@@ -254,7 +280,17 @@ export default {
             },
             pickedPurposes: [],
             checkedActivities: [],
-            additionalFees: []
+            additionalFees: [],
+            //editorData: '<p>Content of the editor.</p>',
+            editorConfig: {
+                // The configuration of the editor.
+                toolbar: toolbar_options,
+                format_tags: 'p;h1;h2;h3;h4;h5;h6;div',
+
+                // remove bottom bar
+                removePlugins: 'elementspath',
+                resize_enabled: false, 
+            },
         }
     },
     computed: {
@@ -505,4 +541,7 @@ export default {
 </script>
 
 <style lang="css">
+    br {
+        padding-bottom: 5px;
+    }
 </style>

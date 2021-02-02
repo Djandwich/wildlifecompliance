@@ -16,6 +16,11 @@ ENV SITE_DOMAIN='dbca.wa.gov.au'
 ENV OSCAR_SHOP_NAME='Department of Biodiversity, Conservation and Attractions'
 ENV BPAY_ALLOWED=False
 
+# For app.js, manifest.js, vendor.js versioning (default value set to 0.0.0)
+ARG build_tag=0.0.0
+ENV BUILD_TAG=$build_tag
+RUN echo "*************************************************** Build TAG = $build_tag ***************************************************"
+
 # Install Python libs from base environment.
 RUN apt-get clean
 RUN apt-get update
@@ -95,6 +100,9 @@ RUN touch /var/log/cron.log
 RUN service cron start
 RUN chmod 755 /startup.sh
 # cron end
+
+# IPYTHONDIR - Will allow shell_plus (in Docker) to remember history between sessions
+RUN export IPYTHONDIR=/app/logs/.ipython/
 
 EXPOSE 8080
 HEALTHCHECK --interval=1m --timeout=5s --start-period=10s --retries=3 CMD ["wget", "-q", "-O", "-", "http://localhost:8080/"]

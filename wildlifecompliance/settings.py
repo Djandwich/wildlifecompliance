@@ -16,6 +16,7 @@ SYSTEM_MAINTENANCE_WARNING = env('SYSTEM_MAINTENANCE_WARNING', 24)  # hours
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles_wc')
 SHOW_DEBUG_TOOLBAR = env('SHOW_DEBUG_TOOLBAR', False)
+APPEND_SOURCE_TO_RICHTEXT_ADMIN = env('APPEND_SOURCE_TO_RICHTEXT_ADMIN', False)
 
 if SHOW_DEBUG_TOOLBAR:
 #    def get_ip():
@@ -71,7 +72,37 @@ INSTALLED_APPS += [
     'rest_framework_gis',
     'rest_framework_datatables',
     'smart_selects',
+    'ckeditor',
 ]
+
+CKEDITOR_BASEPATH = '/static/ckeditor/ckeditor/'
+
+CKEDITOR_CONFIGS = {
+    'default': {
+        'toolbar': 'Custom',
+        'toolbar_Custom': [
+            ['Bold', 'Italic', 'Underline'],
+            ['NumberedList', 'BulletedList', '-', 'Outdent', 'Indent', '-', 'JustifyLeft', 'JustifyCenter', 'JustifyRight', 'JustifyBlock'],
+            ['Link', 'Unlink'],
+            ['RemoveFormat'],
+            #[ 'Source']
+        ]
+    },
+    'pdf_config': {
+        'toolbar': 'Custom',
+        'toolbar_Custom': [
+            [ '-', 'Bold', 'Italic' ],
+            [ 'Format' ],
+            [ 'NumberedList', 'BulletedList' ],
+            [ 'Table' ],
+            #[ 'Source']
+        ]
+    },
+}
+
+if APPEND_SOURCE_TO_RICHTEXT_ADMIN:
+    CKEDITOR_CONFIGS['pdf_config']['toolbar_Custom'].append(['Source'])
+
 
 ADD_REVERSION_ADMIN = True
 
@@ -180,6 +211,7 @@ STATICFILES_DIRS.append(
 DEV_STATIC = env('DEV_STATIC', False)
 DEV_STATIC_URL = env('DEV_STATIC_URL')
 DEV_APP_BUILD_URL = env('DEV_APP_BUILD_URL')  # URL of the Dev app.js served by webpack & express
+BUILD_TAG = env('BUILD_TAG', '0.0.0')  # URL of the Dev app.js served by webpack & express
 if DEV_STATIC and not DEV_STATIC_URL:
     raise ImproperlyConfigured(
         'If running in DEV_STATIC, DEV_STATIC_URL has to be set')

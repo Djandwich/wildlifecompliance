@@ -253,7 +253,8 @@ class ApplicationSelectedActivitySerializer(serializers.ModelSerializer):
     can_action = ApplicationSelectedActivityCanActionSerializer(read_only=True)
     licence_fee = serializers.DecimalField(
         max_digits=8, decimal_places=2, coerce_to_string=False, read_only=True)
-    payment_status = serializers.CharField(read_only=True)
+    # payment_status = serializers.CharField(read_only=True)
+    payment_status = serializers.SerializerMethodField()
     can_pay_licence_fee = serializers.SerializerMethodField()
     officer_name = serializers.SerializerMethodField(read_only=True)
     licensing_officers = EmailUserSerializer(many=True)
@@ -266,6 +267,9 @@ class ApplicationSelectedActivitySerializer(serializers.ModelSerializer):
     class Meta:
         model = ApplicationSelectedActivity
         fields = '__all__'
+
+    def get_payment_status(self, obj):
+        return obj.get_property_cache_payment_status()
 
     def get_activity_name_str(self, obj):
         return obj.licence_activity.name if obj.licence_activity else ''
@@ -895,6 +899,7 @@ class BaseApplicationSerializer(serializers.ModelSerializer):
     can_pay_application = serializers.SerializerMethodField(read_only=True)
     can_pay_licence = serializers.SerializerMethodField(read_only=True)
     licence_type_name = serializers.SerializerMethodField(read_only=True)
+    can_view_richtext_src = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Application
@@ -950,8 +955,12 @@ class BaseApplicationSerializer(serializers.ModelSerializer):
             'is_return_check_accept',
             'can_pay_licence',
             'can_pay_application',
+            'can_view_richtext_src',
         )
         read_only_fields = ('documents',)
+
+    def get_can_view_richtext_src(self, obj):
+        return self.context['request'].user.is_superuser
 
     def get_documents_url(self, obj):
         return '/media/applications/{}/documents/'.format(obj.id)
@@ -1179,7 +1188,13 @@ class BaseApplicationSerializer(serializers.ModelSerializer):
         adj_application_fee = obj.application_fee
         adj_licence_fee = licence_fee
 
-        if obj.total_paid_amount == (obj.application_fee + licence_fee):
+        total_paid = obj.get_property_cache_key('total_paid_amount')[
+            'total_paid_amount'
+        ]
+        total_paid = decimal.Decimal(total_paid)
+
+        # if obj.total_paid_amount == (obj.application_fee + licence_fee):
+        if total_paid == (obj.application_fee + licence_fee):
             # force zero amounts for submitted applications without subsequent
             # changes to form questions (no recalculation occur).
             adj_application_fee = 0
@@ -1265,6 +1280,7 @@ class DTInternalApplicationSerializer(BaseApplicationSerializer):
     #activities = ApplicationSelectedActivitySerializer(many=True, read_only=True)
     payment_url = serializers.SerializerMethodField(read_only=True)
     all_payments_url = serializers.SerializerMethodField(read_only=True)                                   # 1.7s
+    can_view_richtext_src = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Application
@@ -1293,11 +1309,15 @@ class DTInternalApplicationSerializer(BaseApplicationSerializer):
             'invoice_url',
             'payment_url',
             'all_payments_url',
+            'can_view_richtext_src',
         )
         # the serverSide functionality of datatables is such that only columns that have field 'data'
         # defined are requested from the serializer. Use datatables_always_serialize to force render
         # of fields that are not listed as 'data' in the datatable columns
         datatables_always_serialize = fields
+
+    def get_can_view_richtext_src(self, obj):
+        return self.context['request'].user.is_superuser
 
     def get_user_in_officers(self, obj):
         groups = obj.get_permission_groups(['licensing_officer','issuing_officer']).values_list('id', flat=True)
@@ -1310,6 +1330,7 @@ class DTInternalApplicationSerializer(BaseApplicationSerializer):
     def get_payment_status(self, obj):
         value = obj.get_property_cache_key('payment_status')
         return value['payment_status']
+
 
 
 #class DTInternalApplicationDashboardSerializer(BaseApplicationSerializer):
@@ -1610,6 +1631,7 @@ class InternalApplicationSerializer(BaseApplicationSerializer):
     licences = serializers.SerializerMethodField(read_only=True)
     payment_status = serializers.SerializerMethodField(read_only=True)
     can_be_processed = serializers.SerializerMethodField(read_only=True)
+    can_view_richtext_src = serializers.SerializerMethodField(read_only=True)
     activities = serializers.SerializerMethodField()
     processed = serializers.SerializerMethodField()
     licence_officers = EmailUserAppViewSerializer(many=True)
@@ -1654,6 +1676,7 @@ class InternalApplicationSerializer(BaseApplicationSerializer):
             'permit',
             'payment_status',
             'can_be_processed',
+            'can_view_richtext_src',
             'licence_category',
             'activities',
             'processed',
@@ -1667,6 +1690,10 @@ class InternalApplicationSerializer(BaseApplicationSerializer):
             'is_return_check_accept',
         )
         read_only_fields = ('documents', 'conditions')
+
+    def get_can_view_richtext_src(self, obj):
+        #import ipdb; ipdb.set_trace()
+        return self.context['request'].user.is_superuser
 
     def get_activities(self, obj):
         logger.debug('InternalApplicationSerializer.get_activities() - start')
